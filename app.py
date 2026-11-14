@@ -1,5 +1,5 @@
 """PIVOT Python backend: REST API, authentication and minimal playable game API."""
-import os, re, secrets, string
+import os, re, secrets
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 
@@ -22,13 +22,20 @@ GAMES = {}  # Ephemeral: active games are lost when the service restarts.
 
 def db():
     if not DATABASE_URL: raise RuntimeError("DATABASE_URL is not configured")
-    return psycopg.connect(DATABASE_URL, row_factory=dict_row, connect_timeout=8)
+    url = DATABASE_URL
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://"):]
+    return psycopg.connect(url, row_factory=dict_row, connect_timeout=8)
 
 def initialize_database():
     with db() as conn:
         conn.execute("""CREATE TABLE IF NOT EXISTS users (
             id BIGSERIAL PRIMARY KEY, pseudo VARCHAR(24) UNIQUE NOT NULL,
             password_hash TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())""")
+
+# Gunicorn imports app:app rather than executing the __main__ block. Initialize
+# the schema on import so the first deployed request can use the database.
+initialize_database()
 
 def token_for(user):
     return jwt.encode({"sub":str(user["id"]),"pseudo":user["pseudo"],"exp":datetime.now(timezone.utc)+timedelta(days=7)}, app.config["SECRET_KEY"], algorithm="HS256")
@@ -54,8 +61,9 @@ def health():
     try:
         with db() as conn: conn.execute("SELECT 1")
         return jsonify(ok=True, database="ready")
-    except Exception as exc:
-        return jsonify(ok=False, database="unavailable", error=str(exc)),503
+    except Exception:
+        app.logger.exception("Database health check failed")
+        return jsonify(ok=False, database="unavailable"),503
 
 @app.post("/api/auth/signup")
 def signup():
@@ -115,5 +123,4 @@ def home():
     return jsonify(name="PIVOT Python backend",docs="See README.md",health="/api/health")
 
 if __name__ == "__main__":
-    initialize_database()
     socketio.run(app,host="0.0.0.0",port=int(os.getenv("PORT","5000")),debug=False)

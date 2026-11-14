@@ -1,16 +1,12 @@
 # PIVOT — Python backend
 
-Python/Flask backend foundation for the PIVOT v2 project. It replaces the Node.js backend with Python, PostgreSQL, JWT authentication, bcrypt password hashing, and a server-authoritative implementation of the core board rules.
+Python/Flask backend foundation for the PIVOT v2 project. It includes PostgreSQL user storage, JWT authentication, bcrypt password hashing, and a server-authoritative implementation of core board actions.
 
-## Included now
+## Important scope note
 
-- PostgreSQL user table initialized automatically on application startup.
-- Signup, login, and authenticated profile endpoints.
-- PIVOT 7×7 game state and validated actions: `glisser`, `virage`, `diagonale`, `borne`, `tp`, `tp_suite`, and the first-turn `echange` choice.
-- Render Blueprint configuration (`render.yaml`) to deploy the web service and PostgreSQL database.
-- Health endpoint at `/api/health`.
+This repository is **not yet a complete copy or feature-for-feature Python port** of `BenLaBenne/Pivot_game`. The current Python project has its own backend starter. The original HTML/CSS/JavaScript client and all Node.js API/socket features have not all been copied/ported. The original app contains auth, matchmaking/Elo, private rooms, shop/inventory/chests, tournaments, leaderboard, reports, admin, season/pass, and full game UI. Those modules require additional Python implementation and integration; do not treat them as currently available here.
 
-This is a Python backend starter, not a feature-for-feature port of all the original Node app. Ranked matchmaking/Elo, persistent match history and inventories, shop/chests, tournaments, reports/admin tools, season/pass, and the original full UI still need to be ported. Active games currently live in process memory and are lost on restart; use PostgreSQL/Redis persistence before treating it as production multiplayer. The first player can create a game and share its game ID; a second signed-in user can join by requesting that game.
+The included REST starter has signup/login/profile, game creation/join/action APIs, and the core PIVOT rules. Games are held in process memory and disappear at restart; for durable multiplayer, persist game state and implement room/match management in PostgreSQL or Redis. The existing Socket.IO client from the Node version is not yet wired to these Python REST game routes.
 
 ## Run locally
 
@@ -20,39 +16,57 @@ Requires Python 3.12 and PostgreSQL.
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env      # Set DATABASE_URL and JWT_SECRET
+cp .env.example .env
+# Set DATABASE_URL and JWT_SECRET in .env
 python app.py
 ```
 
-Open `http://localhost:5000/api/health`. On local startup, `app.py` creates the user table. The Render/Gunicorn deployment also initializes it at app startup through the WSGI import hook below.
+Open `http://localhost:5000/api/health`.
 
-## API
+## REST endpoints currently available
 
+- `GET /api/health`
 - `POST /api/auth/signup` JSON `{ "pseudo": "player_1", "password": "at-least-8-chars" }`
 - `POST /api/auth/login` JSON `{ "pseudo": "player_1", "password": "..." }`
 - `GET /api/auth/me` with `Authorization: Bearer <token>`
 - `POST /api/games` with bearer token → new game ID and role R
-- `GET /api/games/<gameId>` with bearer token → joins as B if slot is free, or returns current state
+- `GET /api/games/<gameId>` with bearer token → joins as B if slot is free
 - `POST /api/games/<gameId>/actions` with bearer token and action JSON
-- `GET /api/health`
 
-Action examples: `{ "type": "glisser", "to": { "x": 3, "y": 1 } }`; `{ "type": "echange", "garder": true }` after Red's first turn. Coordinates are zero-based, from 0 to 6.
+Game actions include `glisser`, `virage`, `diagonale`, `borne`, `tp`, `tp_suite`, and `echange`. Coordinates are zero-based, from 0 to 6.
 
-## Deploy on Render
+## Render Blueprint parameters
 
-1. Push this repository to GitHub and open Render's **New → Blueprint** flow for it.
-2. Render reads `render.yaml` and creates the Python web service and PostgreSQL database.
-3. `DATABASE_URL` is linked from the database, and Render generates `JWT_SECRET`. Do not add a real secret to the repository.
-4. After the deploy completes, open the service URL and check `/api/health`.
-
-Render settings from the blueprint:
+The root `render.yaml` configures a Python web service and PostgreSQL database:
 
 | Setting | Value |
 |---|---|
+| Service type | Web Service |
+| Service name | `pivot-python-back-game` |
 | Runtime | Python |
-| Build command | `pip install -r requirements.txt` |
+| Region | Oregon |
+| Instance plan | Free (if available for your account/region) |
+| Build command | `pip install --upgrade pip && pip install -r requirements.txt` |
 | Start command | `gunicorn --worker-class gthread --threads 4 --bind 0.0.0.0:$PORT app:app` |
-| Health check | `/api/health` |
-| Environment variables | `DATABASE_URL` (from linked DB), generated `JWT_SECRET`, `PYTHON_VERSION=3.12.8` |
+| Health check path | `/api/health` |
+| Python version | `3.12.8` via `PYTHON_VERSION` |
+| Database service | `pivot-python-db` (PostgreSQL) |
+| Database name/user | `pivot` / `pivot` |
+| `DATABASE_URL` | Automatically linked to the database `connectionString` |
+| `JWT_SECRET` | Generated by Render; keep it private |
+| `FLASK_ENV` | `production` |
+| `DATABASE_SSL` | `true` |
 
-For local `.env`, set `DATABASE_URL` to your PostgreSQL connection string, `JWT_SECRET` to a unique random value, and optionally `PORT` (defaults to 5000). Render's free service/database availability and retention can change; confirm current plan limits in your Render dashboard.
+### Deploy
+
+1. In Render, choose **New → Blueprint** and select this repository's `main` branch.
+2. Review the services in `render.yaml`, then apply the Blueprint.
+3. Wait for the database and web service to finish provisioning.
+4. Open the web service URL plus `/api/health`; the response should report `database: ready`.
+5. Keep `DATABASE_URL` and `JWT_SECRET` as Render-managed secrets; do not commit their actual values.
+
+Render's available regions, free plans, and database terms may vary by account and can change. If a plan or region is unavailable, choose an available plan/region for both the web service and database in the Render dashboard or edit the corresponding Blueprint fields.
+
+## Environment variables
+
+For local development, `.env.example` lists the variable names. Supply a real local PostgreSQL connection string and a unique long random `JWT_SECRET`. Render injects `PORT`; local default is 5000. Do not commit `.env`.

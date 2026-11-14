@@ -3,7 +3,8 @@ services:
     name: pivot-python-back-game
     runtime: python
     plan: free
-    buildCommand: pip install -r requirements.txt
+    region: oregon
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
     startCommand: gunicorn --worker-class gthread --threads 4 --bind 0.0.0.0:$PORT app:app
     healthCheckPath: /api/health
     envVars:
@@ -17,9 +18,12 @@ services:
         value: 3.12.8
       - key: FLASK_ENV
         value: production
-  - type: pserv
-    name: pivot-python-db
-    runtime: postgres
-    plan: free
+      - key: DATABASE_SSL
+        value: true
+
+databases:
+  - name: pivot-python-db
     databaseName: pivot
     user: pivot
+    plan: free
+    region: oregon
