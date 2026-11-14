@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: pivot-python-back-game
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --worker-class gthread --threads 4 --bind 0.0.0.0:$PORT app:app
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: pivot-python-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: FLASK_ENV
+        value: production
+  - type: pserv
+    name: pivot-python-db
+    runtime: postgres
+    plan: free
+    databaseName: pivot
+    user: pivot
